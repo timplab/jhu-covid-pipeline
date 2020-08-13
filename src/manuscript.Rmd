@@ -1,0 +1,754 @@
+---
+title: |
+  | \textbf{Figures for:}
+  | Genomic Diversity of SARS-CoV-2 During Early Introduction into the United Sates National Capital Region
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+always_allow_html: true
+output:
+  bookdown::pdf_book:
+    base_format: rticles::elsevier_article
+geometry: "left=4cm, right=4cm, top=4cm, bottom=4cm"
+header-includes:
+  \usepackage[dvipsnames]{xcolor}
+  \usepackage{geometry}
+  \definecolor{gray80}{rgb}{0.8,0.8,0.8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir="../")
+knitr::opts_chunk$set(fig.width=7.5, fig.height=6, fig.path='../figures/', warning=FALSE, message=FALSE,cache=FALSE,dev='pdf')
+```
+
+```{r, load-libraries, echo=FALSE, message=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(ggnewscale)
+library(gridExtra)
+library(lubridate)
+library(reshape2)
+library(tidyverse)
+library(cowplot)
+library(ggtree)
+library(RColorBrewer)
+library(pheatmap)
+library(seqinr)
+library(magick)
+library(pander)
+library(ape)
+library(readr)
+library(graphics)
+library(sm)
+library(vioplot) 
+
+source("src/plot_funcs_fig2.R") # Figure 2 plotting functions
+source("src/plot_funcs_fig3.R") # Figure 3 plotting functions
+```
+
+\newpage
+\newgeometry{left=2cm,right=2cm,top=2cm,bottom=2cm}
+
+```{r load-metadata, echo=FALSE}
+
+## load metadata that will be used throughout
+jhhs_agg <- read.csv("data/jhhs_aggregate_march.csv",header=TRUE)
+dx_data <- read.csv("data/diagnostic_metadata.csv",header=TRUE)
+csse <- read.csv("data/time_series_covid19_confirmed_US.csv")
+seq_metadata <- read.csv("data/sample_metadata.csv",header=TRUE)
+
+# ensure dates are in date format
+jhhs_agg$verification_date <- as.Date(jhhs_agg$verification_date)
+dx_data$date_fuzzed <- as.Date(dx_data$date_fuzzed)
+
+seq_metadata <- seq_metadata %>%
+  mutate(collection_date=replace(collection_date,collection_date=="unknown",NA)) %>%
+  mutate(collection_date=as.Date(collection_date))
+
+# ensure numeric columns are numeric
+dx_data <- dx_data %>%
+  mutate(age=replace(age,age=="unknown",NA)) %>%
+  mutate(age=as.numeric(age)) %>%
+  mutate(diagnostic_ct_value=replace(diagnostic_ct_value,diagnostic_ct_value=="unknown",NA)) %>%
+  mutate(diagnostic_ct_value=as.numeric(diagnostic_ct_value)) %>%
+  mutate(days_from_onset=replace(days_from_onset,days_from_onset=="unknown",NA)) %>%
+  mutate(days_from_onset=as.numeric(days_from_onset))
+
+seq_metadata <- seq_metadata %>%
+  mutate(age=replace(age,age=="unknown",NA)) %>%
+  mutate(age=as.numeric(age)) %>%
+  mutate(diagnostic_ct_value=replace(diagnostic_ct_value,diagnostic_ct_value=="unknown",NA)) %>%
+  mutate(diagnostic_ct_value=as.numeric(diagnostic_ct_value)) %>%
+  mutate(days_from_onset=replace(days_from_onset,days_from_onset=="unknown",NA)) %>%
+  mutate(days_from_onset=as.numeric(days_from_onset))
+
+```
+
+```{r tree-setup, echo=FALSE}
+
+## tree sidebar to get JHU-only tree for node ordering
+## and clade-colored tree for clade visualization
+
+# read in full nwk-format tree
+ss_tree <- read.tree("data/nextstrain_ncov_local_tree_rooted.nwk")
+
+# read in tree metadata
+ss_meta <- read.csv("data/nextstrain_ncov_local_metadata.tsv",sep='\t',header=TRUE,stringsAsFactors=FALSE)
+
+# get tip names of interest
+ss_tips <- ss_tree$tip.label
+jhu_tips <- ss_tips[grep("-HP",ss_tips)]
+
+# prune tree to keep only desired tips
+jhu_tree <- drop.tip(ss_tree, setdiff(ss_tree$tip.label, jhu_tips))
+#write.tree(jhu_tree,"data/AllClades_cat_wHP_wother_wo3000_woMD_woDC_jhu_rooted.nwk")
+
+# figure out where the clades are
+#ggtree(ss_tree) %<+% ss_meta +
+#  aes(color=Clade) +
+#  scale_color_manual(values=c("#be1e2d","#fbb040","#8dc63f","#92278f","#00aeef"),na.value="grey80") +
+#  geom_point2(aes(color=Clade))
+
+```
+
+# Figure 1
+```{r, fig1-data, echo=FALSE, warning=FALSE}
+
+# plot fig 1A
+csse_date_columns <- names(csse)[grepl("^X",names(csse))]
+csse_dates <- as.Date(gsub("X", "", csse_date_columns), "%m.%d.%y")
+csse_plot_columns <- csse_date_columns[csse_dates %in% jhhs_agg$verification_date]
+#csse_plot_columns <- csse_date_columns[csse_dates %in% as.Date(names(date_count))]
+md_march <- apply(csse[csse$Province_State == "Maryland", csse_plot_columns], 2, sum)
+md_diff <- md_march - cumsum(jhhs_agg$positive_count)
+df_a <- data.frame(date=jhhs_agg$verification_date,
+                   jhhs_cumulative=cumsum(jhhs_agg$positive_count),
+                   md_diff=md_diff)
+df_a_long <- melt(df_a, id.vars="date")
+
+df_a_long$variable <- factor(df_a_long$variable,
+                             levels=c("md_diff", "jhhs_cumulative"))
+levels(df_a_long$variable) <- c("Maryland Overall", "JHHS Overall")
+
+fig1a <- ggplot(df_a_long, aes(x=date, y=value, fill=variable, color=variable)) +
+  geom_bar(stat='identity', width=0.75) +
+  scale_fill_manual(values=c("white", "black")) +
+  scale_color_manual(values=c("black", "black")) +
+  #scale_x_date(limits=as.Date(c("2020-03-01", "2020-03-31"))) +
+  scale_y_continuous(limits=c(0,1750),breaks=seq(0,1750,250), expand = c(0,0)) +
+  labs(x="Test date", y="Number of positive tests") +
+  ggtitle("") +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust = 0.5, size=12),
+        legend.title = element_blank(),
+        legend.text = element_text(size=8),
+        legend.position=c(0.2, 0.95)) +
+  geom_hline(yintercept=seq(0,1500,250), color="white") +
+  geom_vline(xintercept=as.Date(
+    c("2020-03-05","2020-03-07","2020-03-11","2020-03-13","2020-03-23")),linetype="dashed")
+
+# plot fig 1B
+df_b <- dx_data %>% filter(!is.na(days_from_onset)) %>% filter(days_from_onset<20) %>%
+  filter(!is.na(diagnostic_ct_value)) %>% select(days_from_onset,diagnostic_ct_value)
+
+fig1b <- ggplot(df_b, aes(x=days_from_onset, y=diagnostic_ct_value)) +
+  scale_x_continuous() +
+  scale_y_reverse() +
+  geom_hex(binwidth = c(1.75, 2.5)) + 
+  scale_fill_gradientn(colours=brewer.pal(7,"Greys")) +
+  geom_smooth(method='loess', formula=y~x, color="white") +
+  labs(x="Days from symptom onset", y="Ct Value") +
+  ggtitle("") +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        legend.key.width = unit(0.3, "cm"),
+        legend.key.height = unit(0.4, "cm"))
+
+fig1b_legend <- get_legend(fig1b)
+fig1b <- fig1b + theme(legend.position = "none")
+
+# plot fig 1C
+bins <- c("<10","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90+")
+dx_data$age_bins <- cut(dx_data$age,breaks = c(-1,9,19,29,39,49,59,69,79,89,99),labels = bins,right = TRUE)
+dx_df <- data.frame(bin=bins,num=(dx_data %>% group_by(age_bins) %>% dplyr::count() %>% 
+                                ungroup() %>% complete(age_bins))$n)
+fig1c <- ggplot(dx_df, aes(x=bin, y=num)) +
+    geom_bar(stat="identity", width=0.85, fill="black", color="white") +
+    labs(x="Age", y="Number of patients") +
+    scale_x_discrete(expand = c(0.08, 0), breaks = bins[seq(2,length(bins),2)],
+                     labels = bins[seq(2,length(bins),2)]) +
+    scale_y_continuous(expand = c(0, 0)) +
+    theme_classic() +
+    theme(panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"),
+          axis.text.x = element_text(angle = 30, vjust=0.8),
+          legend.title = element_blank(),
+          legend.position = "None") +
+    geom_hline(yintercept=seq(0,125,25), color="white", size=0.2)
+
+```
+
+```{r, fig1, echo=FALSE, fig.width=8.5, fig.height=5}
+
+grid.arrange(fig1a,arrangeGrob(fig1b,fig1b_legend,fig1c,nrow=2,widths=c(5,2)),nrow=1,widths=c(6,3.5))
+
+```
+
+# Figure 2
+```{r, fig2_hists, echo=FALSE}
+
+# load histograms stratified by metadata variables
+plots <- make_complete_genome_hists(seq_metadata)
+ct_hist <- plots[[1]]
+age_hist <- plots[[2]]
+sex_hist <- plots[[3]]
+date_hist <- plots[[4]]
+
+```
+
+```{r, fig2_heatmap, echo=FALSE}
+
+# file containing table of variant calls
+vars_file <- "data/allVars_newclades.txt"
+jhu_newick <- "data/nextstrain_ncov_local_tree_rooted_jhu.nwk"
+
+# load heatmap and dendogram
+#plots <- make.dendro.heatmap(vars_file)
+plots <- make.dendro.heatmap(vars_file,jhu_newick=jhu_newick,reorder_dendro=TRUE)
+heatmap.plot <- plots[[1]]
+colplot <- plots[[2]]
+dendro.cladeplot_nolabels <- plots[[3]]
+col_leg <- plots[[4]]
+
+```
+
+```{r, fig2_varplot, echo=FALSE}
+
+varplot <- make_varplot("data/all_submitted_jhu_sequences.fasta","data/reference.fasta")
+
+```
+
+```{r, fig2, echo=FALSE, warning=FALSE, fig.width=10.5, fig.height=7}
+
+### Putting figure 2 together ###
+
+#dendroheatmap <- ggdraw() +
+#  draw_plot(heatmap.plot, x = 0, y = 0.025, width = 0.8, height = 0.935) +
+#  draw_plot(dendro.cladeplot_nolabels, x = 0.81, y = 0, width = 0.18, height = 1) +
+#  draw_plot(colplot, x = 0.79, y = 0.025, width = 0.03, height = 0.935)
+
+vardendroheatmap <- ggdraw() +
+  draw_plot(varplot, x = 0.005, y = 0, width = 0.825, height = 0.32) +
+  draw_plot(heatmap.plot, x = 0.06, y = 0.325, width = 0.76, height = 0.655) +
+  draw_plot(dendro.cladeplot_nolabels, x = 0.83, y = 0.316, width = 0.16, height = 0.693) +
+  draw_plot(colplot, x = 0.81, y = 0.329, width = 0.03, height = 0.651) +
+  draw_plot(col_leg, x = 0.805, y = 0.14, width = 0.16, height = 0.1)
+
+ggarrange(arrangeGrob(textGrob("",hjust = 1),ct_hist,age_hist,sex_hist,date_hist,
+                      ncol=1,heights=c(1,9,9,9,9)),
+          vardendroheatmap, ncol=2, widths = c(2,8))
+
+```
+
+# Figure 3A
+```{r fig3-tree, echo=FALSE, fig.height=7.5, fig.width=5.5}
+
+# get metadata for JHHS sequences within the tree
+md_meta <- seq_metadata %>% filter(genome=="Yes")
+md_meta$newick_label <- substr(md_meta$strain,9,100) # extract tip label string
+md_meta <- md_meta %>% select(newick_label,nextstrain_clade,ID,
+                              hospital_admission,oxygen,ICU_admission,ventilator,outcome)
+
+# turn severity into a color
+color_sm <- "2-hosp"
+color_lg <- "1-ICU"
+md_meta <- md_meta %>% 
+  mutate(sev=ifelse(ventilator=="Yes",color_lg,
+                        ifelse(ICU_admission=="Yes",color_lg,
+                               ifelse(oxygen=="Yes",color_sm,
+                                      ifelse(hospital_admission=="Yes",color_sm,NA)))))
+
+# get node numbers for this tree
+md_meta$node <- NA
+tipnode <- seq_along(ss_tree$tip.label)
+names(tipnode) <- ss_tree$tip.label
+md_meta$node <- tipnode[md_meta$newick_label] ## convert tip label to tip node number
+
+fig3_tree <- ggtree(ss_tree,color="grey90") %<+% md_meta +
+  geom_point2(aes(subset=(node %in% md_meta[is.na(md_meta$sev),"node"])),
+              shape=21,size=1.5,color="#92c4d3",stroke=1) +
+  geom_point2(aes(subset=(node %in% md_meta[!is.na(md_meta$sev),"node"]),
+              color=sev),shape=21,size=1.5,stroke=1) +
+  scale_color_manual(values=c("#990000","#FF6666"),labels=c("ICU admission","Hospital admission")) +
+  theme(legend.position = "none") +
+  geom_treescale()
+
+fig3_tree
+
+```
+
+# Figure 3B
+```{r, fig3-heatmap, echo=FALSE, warning=FALSE, message=FALSE, fig.width=4, fig.height=7.5}
+
+# start with patient metadata
+md_meta <- seq_metadata %>% filter(genome=="Yes")
+md_meta$newick_label <- substr(md_meta$strain,9,100)
+
+# get order of tips in jhu tree (for optional ordering by tree)
+#jhu_tree <- read.tree("data/nextstrain_ncov_local_tree_rooted_jhu.nwk")
+#is_tip_jhutree <- jhu_tree$edge[,2] <= length(jhu_tree$tip.label)
+#tip_order_jhutree <- jhu_tree$tip.label[jhu_tree$edge[is_tip_jhutree,2]]
+
+# create a temporary 19B/20A clade to ensure 20A outgroup
+md_meta[md_meta$name=="MDHP-00114","nextstrain_clade"] <- "20-1 (20A)"
+md_meta[md_meta$nextstrain_clade=="20B","nextstrain_clade"] <- "20-2 (20B)"
+md_meta[md_meta$nextstrain_clade=="20A","nextstrain_clade"] <- "20-3 (20A)"
+
+# bin high outcomes to obscure deaths
+md_meta <- md_meta %>%
+  mutate(outcome=replace(outcome,outcome=="Dead","A-No Discharge")) %>%
+  mutate(outcome=replace(outcome,outcome=="On admission","A-No Discharge"))
+
+# add ABC to outcome name to fix order
+md_meta <- md_meta %>%
+  mutate(outcome=replace(outcome,outcome=="Discharged","B-Discharged")) %>%
+  mutate(outcome=replace(outcome,outcome=="Home","C-Home"))
+
+# start by grouping samples by outcome
+dispo <- factor(md_meta$outcome,levels=c("A-No Discharge", "B-Discharged", "C-Home"))
+md_meta <- md_meta[order(dispo),]
+
+# then order by ID
+#md_meta <- md_meta[order(as.numeric(as.matrix(md_meta$ID))),]
+
+# create dataframe for annotation columns
+#df_metadata <- md_meta %>% select(newick_label,sex,race,travel,covid_contact,outcome,nextstrain_clade)
+df_metadata <- md_meta %>% select(sex,race,travel,covid_contact,outcome,nextstrain_clade)
+
+annotation_colors <- list("sex" = c("F" = "black","M" = "white", "unknown"="gray80"),
+                          "race" = c("Black" = "black","White" = "white","Other" = "gray80"),
+                          "travel" = c("Yes" = "black","No" = "white","unknown" = "gray80"),
+                          "covid_contact" = c("Yes" = "black","No" = "white","unknown" = "gray80"),
+                          "outcome" = c("A-No Discharge" = "black","B-Discharged" = "gray40",
+                                        "C-Home" = "white","unknown" = "gray80"),
+                          "nextstrain_clade" = c("19A" = "#be1e2d","19B" = "#fbb040",
+                                                 "20-1 (20A)" = "#8dc63f", "20-3 (20A)" = "#8dc63f",
+                                                 "20-2 (20B)" = "#92278f","20C" = "#00aeef"))
+
+# create dataframes for heatmap groups
+df_enroll <- md_meta[,c("fever","cough", "SOB")]
+df_disease <- md_meta[,c("cardiac_dx","lung_dx","diabetes","obese","alcohol","smoker","immunecomp")]
+df_symptoms <- md_meta[,c("bodyache","GI")]
+df_other <- md_meta[,c("NSAID","cxn_abn")]
+df_outcome <- md_meta[,c("hospital_admission","oxygen","ICU_admission", "ventilator")]
+
+# fix levels for unified dataframe
+fix_df <- function(df) {
+  labels <- names(df)
+  df <- as.matrix(df)
+  df[df=="No"] <- 0
+  df[df=="unknown"] <- NA
+  df[df=="Yes"] <- 1
+  df <- matrix(as.numeric(df), nrow=nrow(df))
+  dimnames(df)[[2]] <- labels
+  return(df)
+}
+
+df_disease[df_disease=="Nonsmoker"]<-"No"
+df_disease[df_disease=="Smoker"]<-"Yes"
+df_disease[df_disease=="Former Smoker"]<-"Yes"
+
+#levels(df_disease$SMOKER) <- c("No", "Yes", "Yes")
+df_disease <- fix_df(df_disease)
+df_enroll <- fix_df(df_enroll)
+df_symptoms <- fix_df(df_symptoms)
+df_other <- fix_df(df_other)
+df_outcome <- fix_df(df_outcome)
+
+# make unified data table for heatmap
+df_all <- data.frame(cbind(df_enroll, df_symptoms, df_other, df_disease, df_outcome))
+#df_all$newick_label <- substr(md_meta$strain,9,100)
+
+# order by clade
+rownames(df_all) <- md_meta$strain
+rownames(df_metadata) <- md_meta$strain
+df_all <- df_all[order(df_metadata$nextstrain_clade,
+                       df_metadata$outcome,
+                       apply(df_outcome, 1, function(x) -1*sum(x)), # make negative to dictate order
+                       decreasing=FALSE),]
+
+# order by tree order
+#df_all <- left_join(data.frame(newick_label=tip_order_jhutree),df_all,by="newick_label")
+#df_metadata <- left_join(data.frame(newick_label=tip_order_jhutree),df_metadata,by="newick_label")
+#df_all <- select(df_all,-newick_label)
+#df_metadata <- select(df_metadata,-newick_label)
+#rownames(df_all) <- tip_order_jhutree
+#rownames(df_metadata) <- tip_order_jhutree
+
+
+# plot heatmap
+heatmap_outcome <- pheatmap(df_all,
+                         color=c("white", "black"),
+                         show_rownames = FALSE,
+                         show_colnames = FALSE,
+                         cluster_rows = FALSE,
+                         cluster_cols = FALSE,
+                         legend = FALSE,
+                         cellwidth = 3.5,
+                         cellheight = 3.5,
+                         border_color = "gray80",
+                         gaps_col = cumsum(c(dim(df_enroll)[2],
+                                             dim(df_symptoms)[2],
+                                             dim(df_other)[2],
+                                             dim(df_disease)[2],
+                                             dim(df_outcome)[2])),
+                         silent=TRUE,
+                         annotation_row = df_metadata,
+                         annotation_colors = annotation_colors,
+                         guides = guide_legend(ncol = 2))
+
+heatmap_outcome
+
+```
+
+# Figure 4A
+```{r, fig4-tree, echo=FALSE, warning=FALSE, fig.width=5.5, fig.height=7.5}
+
+#seq <-  ss_tree$tip.label # create vector of tip labels
+#dd <- data.frame(seq) # make that the first column of a data frame
+
+# start with metadata for all samples in tree
+tree_dat <- ss_meta
+
+# indicate which samples are part of this study
+tree_dat$HP <- 0
+tree_dat$HP[grep("MD-HP",tree_dat$Strain)] = "MDHP"
+tree_dat$HP[grep("DC-HP",tree_dat$Strain)] = "DCHP"
+
+# save states of interest
+tree_dat$state <- 0
+tree_dat$state[tree_dat$Admin.Division=="Maryland"] = "MD"
+tree_dat$state[tree_dat$Admin.Division=="Virginia"] = "VA"
+tree_dat$state[tree_dat$Admin.Division=="Washington DC"] = "DC"
+
+# indicate if USA sample or not
+tree_dat$country <- 0
+tree_dat$country[tree_dat$Country=="USA"] = "USA"
+
+# keep only required columns for simplicity
+tree_dat <- tree_dat %>% select(Strain,HP,state,country)
+
+ggtree(ss_tree,color="grey90") %<+% tree_dat +
+  geom_point2(aes(subset=(country=="USA")),
+              shape=21,fill="white",color="grey20",size=0.7,alpha=0.5) +
+  geom_point2(aes(subset=(HP==0 & !state==0),color=state),
+              fill="white",size=2.5,shape=21,alpha=1) +
+  scale_color_manual(values=c("#fb7541","#2473b1","#50b998")) +
+  new_scale_color() +
+  geom_point2(aes(subset=(!HP==0),color=HP),shape=20,size=3.75) +
+  scale_color_manual(values=c("#fb7541","#2473b1")) +
+  theme(legend.position = "right") +
+  geom_treescale()
+
+```
+
+# Figure 4B
+```{r, violins, echo=FALSE}
+
+ParwiseDistances <- read.delim("data/ParwiseDistances.txt")
+
+ParwiseDistances$clade <- factor(ParwiseDistances$clade,levels = 
+                                   c("Global 3K", "Global 1K", "WA","CA", "NY","ID","LA",
+                                     "VA", "MD other", "JHHS-MD", "DC other","JHHS-DC"))
+
+VP <- ggplot(ParwiseDistances, aes(x=clade, y=Dist, color = clade, fill = clade), scale = "area", trim = FALSE)
+VP <- VP + geom_violin(draw_quantiles = c(0.5), adjust = 2) 
+VP <- VP + scale_color_manual(values=c("#8D8F91", "#8D8F91", "#8D8F91","#8D8F91", "#8D8F91","#8D8F91","#8D8F91", "#67C4A2", "#1E72B3", "#1E72B3", "#F27045","#F27045"))
+VP <- VP + scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF","#FFFFFF", "#FFFFFF","#FFFFFF","#FFFFFF", "#FFFFFF", "#FFFFFF", "#1E72B3", "#FFFFFF","#F27045"))
+VP <- VP + labs(x="Regional groups", y="Genetic Distance (d)") + theme_light() + coord_flip() 
+VP <- VP + theme(
+  panel.background = element_rect(fill = "transparent",colour = NA),
+  plot.background = element_rect(fill = "transparent", colour = NA),
+  plot.title = element_text(hjust = 0.5)
+)
+VP <- VP + theme(legend.position="none")
+VP
+
+```
+
+\newpage
+# Figure 4C
+```{r, map-pie, eval=TRUE, echo=FALSE}
+#-------------------------------------------------
+# load libraries
+library(maptools)
+library(rgdal)
+library(sf)
+library(lwgeom)
+library(mapplots)
+library(RColorBrewer)
+library(dplyr)
+
+#-------------------------------------------------
+# set up aesthetics
+water_col <- "lightblue"
+zip3_fill_col <- rev(RColorBrewer::brewer.pal(n = 4, name = "Greys"))[2:4]
+zip3_border_col <- "gray90"
+zip3_border_width <- 0.5
+state_border_col <- "gray90"
+state_border_width <- 0.1
+maryland_border_col <- "gray30"
+maryland_border_width <- 2
+county_border_col <- "gray90"
+county_border_width <- 0.1
+baltimore_border_col <- "gray90"
+baltimore_border_width <- 0.25
+water_line_width <- 1
+
+#-------------------------------------------------
+# set up viewbox
+asp <- 1
+center <- c(-77.25, 38.85)
+span <- c(3.8, 2.1)
+new_center <- c(0, 0)
+longlat_spacing <- 1
+countries <- c("United States")
+regions <- ""
+subregions <- ""
+states <- c("Maryland", "Delaware", "Virginia", "West Virginia", "Pennsylvania", "New Jersey")
+states_fips <- c(24, 10, 51, 54, 42, 34)
+xlim <- c(-span[1]/2+new_center[1], span[1]/2+new_center[1])*1e5
+ylim <- c(-span[2]/2+new_center[2], span[2]/2+new_center[2])*1e5
+
+#-------------------------------------------------
+# simplify shapefiles and rotate to focus on Maryland
+
+# fix_sf <- function(sf, center) {
+# 
+#   # mainPolys <- sf %>% filter(ALAND > 0.001)
+#   sf.simp <- sf::st_simplify(sf, dTolerance=0.001)
+# 
+#   # This works for the USA - I'm not sure what lat_1 and lat_2 do, if they need to change for other regions
+#   CRSstring <- paste("+proj=lcc +lat_1=33 +lat_2=45 +lat_0=", center[2], " +lon_0=", center[1], " +x_0=0 +y_0=0 +ellps=GRS80 +datum=WGS84 +units=m +no_defs", sep="")
+#   sf.tr <- sf::st_transform(sf.simp, CRS(CRSstring))
+# 
+#   # good.polys <- sf::st_is_valid(sf.tr)
+#   # sf.fix <- sf::st_make_valid(sf.tr[!is.na(good.polys) & !good.polys,])
+#   sf.nonempty <- sf.tr[!sf::st_is_empty(sf.tr),,drop=FALSE]
+#   return(sf.nonempty)
+# }
+# 
+
+#-------------------------------------------------
+# read in shapefiles
+# zip3 <- sf::st_read("data/tl_2009_us_zcta3.shp")
+# county <- sf::st_read("data/tl_2019_us_county.shp")
+# state <- sf::st_read("data/tl_2019_us_state.shp")
+# country <- sf::st_read("data/USA_adm0.shp")
+# water <- sf::st_read("/data/projects/maps/gis/wat/USA_wat/USA_water_areas_dcw.shp")
+
+# zip3.tr <- fix_sf(zip3[substr(zip3$ZCTA3CE,1,1) %in% c(0,1,2),], center)
+# sf::st_write(zip3.tr, "data/shapefiles/zip3_mdhp.shp",
+#          layer="zip3_mdhp",
+#          driver="ESRI Shapefile")
+# county.tr <- fix_sf(county[county$STATEFP %in% states_fips,], center)
+# sf::st_write(county.tr, "data/shapefiles/county_mdhp.shp",
+#          layer="county_mdhp",
+#          driver="ESRI Shapefile")
+# state.tr <- fix_sf(state[state$NAME %in% states,], center)
+# sf::st_write(state.tr, "data/shapefiles/state_mdhp.shp",
+#          layer="state_mdhp",
+#          driver="ESRI Shapefile")
+# country.tr <- fix_sf(country, center)
+# sf::st_write(country.tr, "data/shapefiles/country_mdhp.shp",
+#          layer="country_mdhp",
+#          driver="ESRI Shapefile")
+# water.tr <- fix_sf(water[18000:20000,], center)
+# sf::st_write(water.tr, "data/shapefiles/water_mdhp.shp",
+#          layer="water_mdhp",
+#          driver="ESRI Shapefile")
+
+zip3.tr <- sf::st_read('data/shapefiles/zip3_mdhp.shp')
+county.tr <- sf::st_read('data/shapefiles/county_mdhp.shp')
+state.tr <- sf::st_read('data/shapefiles/state_mdhp.shp')
+country.tr <- sf::st_read('data/shapefiles/country_mdhp.shp')
+water.tr <- sf::st_read('data/shapefiles/water_mdhp.shp')
+CRSstring <- paste("+proj=lcc +lat_1=33 +lat_2=45 +lat_0=", (center[2]-0.005), " +lon_0=", center[1], " +x_0=0 +y_0=0 +ellps=GRS80 +datum=WGS84 +units=m +no_defs", sep="")
+water.tr <- sf::st_transform(water.tr, CRS(CRSstring))
+#-------------------------------------------------
+# create object for fill for Chesapeake + Delaware Bays
+c_coord <- st_coordinates(country.tr)
+bay_water <- c_coord[4100:8377,]
+
+#-------------------------------------------------
+# set up zip data
+z <- read.csv("data/samples_zip3_clade.csv", row.names=1)
+z[z=="1-5"] <- 5
+zips <- rownames(z)
+z <- apply(z, 2, as.numeric)
+dimnames(z)[[1]] <- zips
+
+# link totals with zip3 shapefile
+zip_totals <- apply(z,1,sum)
+count.mat <- function(zip) {
+  ret <- 0
+  if(sum(zips == zip) > 0) {
+    ret <- as.numeric(zip_totals[zips == zip])
+  }
+	return(ret)
+}
+count <- sapply(as.matrix(zip3.tr$ZCTA3CE), count.mat)
+
+# calculate color ramp from 0 to 1 for all places in 'place'
+ramp <- (1 - count/max(zip_totals))
+ramp[ramp < 0] <- 0
+
+# convert ramp to rgb colors in hex string
+col_ramp <- colorRamp(zip3_fill_col)
+zip_col <- rgb(t(sapply(ramp, col_ramp)/255))
+zip_col[ramp==1] <- "#FFFFFF"
+
+#-------------------------------------------------
+# create empty plot
+plot(0,0, type='n', xlim=xlim, ylim=ylim, asp=asp, axes=F, xlab="", ylab="")
+# add water fill rectangle as base
+rect(-360*1e6, -180*1e6, 360*1e6, 180*1e6, col=water_col, border=NA)
+# plot zip3 fill first
+plot(zip3.tr, xlim=xlim, ylim=ylim, asp=asp,
+     col=zip_col, border=NA, add=TRUE)
+# overlay bay water
+polypath(bay_water,
+         col=water_col, border=FALSE)
+# add other lakes / water polygons
+plot(water.tr$geometry, xlim=xlim, ylim=ylim, asp=asp,
+     col=water_col, border=NA, add=TRUE)
+# add rivers / water lines
+# lines(waterlines.tr, xlim=xlim, ylim=ylim, asp=asp,
+#       col=water_col, lwd=water_line_width)
+# add county borders
+plot(county.tr$geometry[county.tr$NAME != "Baltimore",], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=county_border_col, lwd=county_border_width, add=TRUE)
+# add Baltimore city border
+plot(county.tr$geometry[county.tr$NAME == "Baltimore",], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=baltimore_border_col, lwd=baltimore_border_width, add=TRUE)
+# add zip3 borders
+plot(zip3.tr$geometry, xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=zip3_border_col, lwd=zip3_border_width,
+     add=TRUE)
+# add state borders
+plot(state.tr$geometry[state.tr$STATEFP != 24,], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=state_border_col, lwd=state_border_width, add=TRUE)
+# add Maryland border
+plot(state.tr$geometry[state.tr$STATEFP == 24,], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=maryland_border_col, lwd=maryland_border_width, add=TRUE)
+
+#-------------------------------------------------
+# plot clade pie charts
+clade_colors <- list("19A" = "#be1e2d",
+                  "19B" = "#fbb040",
+                  "20A" = "#8dc63f",
+                  "20B" = "#92278f",
+                  "20C" = "#00aeef")
+
+rotate.sphere.old <- function(long, lat, a, axis=c(0,1,0)) {
+	
+	# rotates a long/lat pair 'a' degrees about an axis (defaults to y-axis)
+	# z-axis is north/south pole of earth
+	# x-axis comes out of the earth at (0, 0)
+	# y-axis comes out of the earth at (0, 90)
+	# returns the rotated longitude and latitude:
+	#   where the new 'north pole' is where the z-axis comes out of the rotated sphere
+	
+	# define constants
+	pi <- 3.14159265358979
+	
+	# convert lat, long, 'a' to radians
+	az <- long * pi/180
+	incl <- (90-lat) * pi/180
+	a <- a * pi/180
+	
+	# convert spherical coordinates to cartesian coordinates
+	x <- cos(az) * sin(incl)
+	y <- sin(az) * sin(incl)
+	z <- cos(incl)
+	
+	# rotate 'a' degrees about rotation axis
+	c1 <- axis[1]
+	c2 <- axis[2]
+	c3 <- axis[3]
+	x_p <- x*cos(a) + (1-cos(a))*(c1*c1*x + c1*c2*y + c1*c3*z) + (c2*z - c3*y)*sin(a)
+	y_p <- y*cos(a) + (1-cos(a))*(c2*c1*x + c2*c2*y + c2*c3*z) + (c3*x - c1*z)*sin(a)
+	z_p <- z*cos(a) + (1-cos(a))*(c3*c1*x + c3*c2*y + c3*c3*z) + (c1*y - c2*x)*sin(a)
+	
+	# convert back to spherical coordinates
+	az_p <- atan2(y_p, x_p)
+	incl_p <- acos(z_p)
+	
+	# convert azimuth/inclination to longitude/latitude
+	long_p <- az_p * 180/pi
+	lat_p <- 90 - incl_p * 180/pi
+	
+	return(c(long_p, lat_p))
+}
+
+o <- order(names(which(count>0)))
+lat <- as.numeric(zip3.tr$INTPTLAT[count>0][o])
+lon <- as.numeric(zip3.tr$INTPTLON[count>0][o]) - center[1]
+
+rotated <- matrix(rotate.sphere.old(lon, lat, center[2]), ncol=2)
+
+plot_totals <- zip_totals[rownames(z) %in% zip3.tr$ZCTA3CE]
+cex <- rep(0.4, length(plot_totals))
+cex[plot_totals<=15] <- 0.3
+cex[plot_totals==5] <- 0.25
+offset <- rep(-0.1, length(plot_totals))
+offset[plot_totals<=15] <- -0.075
+offset[plot_totals==5] <- -0.05
+for(i in seq_along(plot_totals)) {
+  mapplots::add.pie(z=z[i,],
+          x=rotated[i,1]*1e5,
+          y=rotated[i,2]*1e5,
+          radius=sqrt(plot_totals[i])*1e3,
+          col=unlist(clade_colors),
+          border=NA,
+          labels="")
+  mapplots::add.pie(z=1,
+          x=rotated[i,1]*1e5,
+          y=rotated[i,2]*1e5,
+          radius=sqrt(plot_totals[i])*1e3*0.5,
+          col='white',
+          border=NA,
+          # labels=plot_totals[i],
+          labels="",
+          label.dist=0,
+          pos=1,
+          offset=offset[i],
+          cex=cex[i]
+  )
+}
+
+#-------------------------------------------------
+# print legend
+# legend_ramp <- c(5, 50, 100, 165)/count_max
+# legend_col <- rev(rgb(t(sapply(legend_ramp, col_ramp))/255))
+# legend(x=-190000*0.4, y=5000, fill=legend_col, legend=c("1-5", 50, 100, 165), border=NA, box.lty=0, bg="white", cex=2)
+
+```
+
+\newpage
+# RMarkdown Environment
+```{r, markdown-env, eval=TRUE, echo=FALSE}
+# print out all packages used
+sessionInfo()
+```
+
+```{r close_plots, echo=FALSE, results='hide'}
+dev.off()
+```

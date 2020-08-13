@@ -1,0 +1,172 @@
+---
+title: |
+  | \textbf{Supplementary Figures for:}
+  | Genomic Diversity of SARS-CoV-2 During Early Introduction into the United Sates National Capital Region
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+always_allow_html: true
+output:
+  bookdown::pdf_book:
+    base_format: rticles::elsevier_article
+geometry: "left=4cm, right=4cm, top=4cm, bottom=4cm"
+header-includes:
+  \usepackage[dvipsnames]{xcolor}
+  \usepackage{geometry}
+  \definecolor{gray80}{rgb}{0.8,0.8,0.8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir="../")
+knitr::opts_chunk$set(fig.width=7.5, fig.height=6, fig.path='../figures/', warning=FALSE, message=FALSE,cache=FALSE,dev=c('png','pdf'))
+```
+
+```{r, load-libraries, echo=FALSE, message=FALSE}
+library(ggplot2)
+library(pheatmap)
+library(ape)
+library(stringr)
+library(dplyr)
+library(seqinr)
+source("src/plot_funcs_supp.R") # Supplementary figure plotting functions
+
+```
+
+\newpage
+\newgeometry{left=2cm,right=2cm,top=2cm,bottom=2cm}
+
+```{r load-metadata, echo=FALSE}
+
+## load metadata that will be used throughout
+seq_metadata <- read.csv("data/sample_metadata.csv",header=TRUE)
+
+# ensure dates are in date format
+seq_metadata$collection_date <- as.Date(seq_metadata$collection_date)
+
+# ensure numeric columns are numeric
+
+seq_metadata <- seq_metadata %>%
+  mutate(age=replace(age,age=="unknown",NA)) %>%
+  mutate(age=as.numeric(age)) %>%
+  mutate(diagnostic_ct_value=replace(diagnostic_ct_value,diagnostic_ct_value=="unknown",NA)) %>%
+  mutate(diagnostic_ct_value=as.numeric(diagnostic_ct_value)) %>%
+  mutate(days_from_onset=replace(days_from_onset,days_from_onset=="unknown",NA)) %>%
+  mutate(days_from_onset=as.numeric(days_from_onset))
+
+```
+
+```{r load-heatmap-data, echo=FALSE}
+
+# load clinical metdata
+md_meta <- seq_metadata
+md_meta <- md_meta %>% filter(genome=="Yes")
+
+# read in alignment of all sequences
+align <- read.alignment("data/all_submitted_jhu_sequences.fasta","fasta")
+align <- as.matrix(align)
+rownames(align) <- substr(rownames(align),13,22)
+rownames(align) <- str_replace(rownames(align),"..-HP","MDHP-")
+align <- subset(align,rownames(align)!="MDHP-00146") # sequence that did not produce a complete genome
+  
+# load reference genome
+ref <- read.fasta("data/reference.fasta")
+ref <- as.vector(ref$MN908947.3)
+
+# function to determine which positions have all N or only ref and N
+get.novar.cols <- function(pos,aln,ref){
+    aln_col <- aln[,pos]
+    aln_col <- as.vector(aln_col)
+    col_vals <- unique(aln_col)
+    if (length(col_vals)==1 && col_vals=="n") { return(FALSE) }
+    if (length(col_vals)==2 && ("n" %in% col_vals) && (ref[pos] %in% col_vals)) { return(FALSE) }
+    return(TRUE)
+}
+  
+cols_to_keep <- sapply(1:29903,get.novar.cols,align,ref)
+
+# function to change variant values to numbers
+vars.to.numeric <- function(pos,aln,ref){
+  aln_col <- aln[,pos]
+  aln_col <- as.vector(aln_col)
+  sapply(aln_col,function(x) ifelse(x==ref[pos],0,ifelse(x %in% c("a","c","t","g"),1,2)),USE.NAMES=FALSE)
+}
+
+# change variant values to numbers
+mut_num <- sapply(1:29903,vars.to.numeric,align,ref)
+rownames(mut_num) <- rownames(align)
+colnames(mut_num) <- seq(1,29903)
+
+# remove columns with all "N" or only "N" and reference
+mut_mat <- mut_num[,cols_to_keep]
+
+# keep only variants that show up in at least 3 samples
+cols_with_vars <- as.vector(apply(mut_mat,2,function(x) sum(x)>=3))
+mut_mat <- mut_mat[,cols_with_vars]
+
+# select which annotations to keep
+annots <- md_meta %>% select("name","nextstrain_clade","nextstrain_jhhs_clade","pangolin_clade")
+
+# ensure data and annotations are in the same order
+mut_mat <- mut_mat[annots$name,]
+
+```
+
+# Supplemental Figure 1. JHU-relevant SNPs.
+```{r, figS1, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=9}
+
+# order rows by nextstrain clade and jhhs clade
+row_order <- order(annots[,"nextstrain_clade"],annots[,"nextstrain_jhhs_clade"],
+                   annots[,"pangolin_clade"],decreasing=TRUE)
+annots <- annots[row_order,]
+rownames(annots) <- annots$name
+annots <- select(annots,-name)
+
+clade_heatmap <- pheatmap(mut_mat[row_order,],
+        labels_col=colnames(mut_mat[row_order,]),
+        labels_row=rownames(mut_mat[row_order,]),
+        col=c("#FFFFFF", "gray30", "gray70"),
+        xlab="mutation position",
+        ylab="sample",
+        fontsize_row=4,fontsize_col=4,
+        margins=c(10,5),
+        cluster_rows=FALSE,
+        # clustering_distance_rows="canberra",
+        clustering_distance_cols="euclidean",
+        clustering_method="complete",
+        angle_col=270,
+        border_color = "gray80",
+        legend = FALSE,
+        annotation_row = annots,
+        silent=TRUE
+        )
+
+clade_heatmap
+
+```
+Homoplasies visible at 11083, 13730, 27964
+
+# Supplemental Figure 2. Illumina versus Nanopore allele frequency comparison.
+```{r, figS2, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=3.5}
+
+postfilt_file <- "data/all_postfilt_variants.txt"
+postfilt_summary <- "data/all_postfilt_summaries.txt"
+vars_file = "data/allVars_newclades.txt"
+
+plots <- make_ont_ill_plots(postfile_file, postfilt_summary, vars_file)
+
+grid.arrange(plots[[1]],plots[[3]],ncol=2)
+
+```
+
+# Supplemental Figure 3. Homopolymer and strand bias example.
+
+# Supplemental Figure 4. Genetic distances matrix.
+
+\newpage
+# RMarkdown Environment
+```{r, markdown-env, eval=TRUE, echo=FALSE}
+# print out all packages used
+sessionInfo()
+```
+
+```{r close_plots, echo=FALSE, results='hide'}
+dev.off()
+```
