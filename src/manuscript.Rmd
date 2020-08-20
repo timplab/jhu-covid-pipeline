@@ -471,22 +471,27 @@ ggtree(ss_tree,color="grey90") %<+% tree_dat +
 # Figure 4B
 ```{r, violins, echo=FALSE}
 
-ParwiseDistances <- read.delim("data/ParwiseDistances.txt")
+ParwiseDistances <- read.delim("data/PairwiseDistances.txt")
 
-ParwiseDistances$clade <- factor(ParwiseDistances$clade,levels = 
-                                   c("Global 3K", "Global 1K", "WA","CA", "NY","ID","LA",
-                                     "VA", "MD other", "JHHS-MD", "DC other","JHHS-DC"))
+PairwiseDistances$Clade <- factor(PairwiseDistances$Clade,levels = 
+                                    c("Global 3K", "Global 1K", "WA","CA", "NY","ID","LA", "VA",
+                                      "MD other", "JHHS-MD", "DC other","JHHS-DC"))
 
-VP <- ggplot(ParwiseDistances, aes(x=clade, y=Dist, color = clade, fill = clade), scale = "area", trim = FALSE)
+VP <- ggplot(PairwiseDistances, aes(x=Clade, y=Dist, color = Clade, fill = Clade), scale = "area", trim = FALSE)
 VP <- VP + geom_violin(draw_quantiles = c(0.5), adjust = 2) 
-VP <- VP + scale_color_manual(values=c("#8D8F91", "#8D8F91", "#8D8F91","#8D8F91", "#8D8F91","#8D8F91","#8D8F91", "#67C4A2", "#1E72B3", "#1E72B3", "#F27045","#F27045"))
-VP <- VP + scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF","#FFFFFF", "#FFFFFF","#FFFFFF","#FFFFFF", "#FFFFFF", "#FFFFFF", "#1E72B3", "#FFFFFF","#F27045"))
+VP <- VP + scale_color_manual(
+  values=c("#8D8F91", "#8D8F91", "#8D8F91","#8D8F91", "#8D8F91","#8D8F91","#8D8F91",
+           "#67C4A2", "#1E72B3", "#1E72B3", "#F27045","#F27045"))
+VP <- VP + scale_fill_manual(
+  values=c("#FFFFFF", "#FFFFFF", "#FFFFFF","#FFFFFF", "#FFFFFF","#FFFFFF","#FFFFFF",
+           "#FFFFFF", "#FFFFFF", "#1E72B3", "#FFFFFF","#F27045"))
 VP <- VP + labs(x="Regional groups", y="Genetic Distance (d)") + theme_light() + coord_flip() 
 VP <- VP + theme(
   panel.background = element_rect(fill = "transparent",colour = NA),
   plot.background = element_rect(fill = "transparent", colour = NA),
   plot.title = element_text(hjust = 0.5)
 )
+
 VP <- VP + theme(legend.position="none")
 VP
 
