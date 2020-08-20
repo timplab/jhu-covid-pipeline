@@ -1,6 +1,6 @@
 # jhu-covid-pipeline
 
-Analysis code and viral genomics pipeline associated with *Genomic Diversity of SARS-CoV-2 During Early Introduction into the United States National Capital Region* by Thielen et al. 2020.
+Analysis code and viral genomics pipeline associated with [Genomic Diversity of SARS-CoV-2 During Early Introduction into the United States National Capital Region](https://www.medrxiv.org/content/10.1101/2020.08.13.20174136v1) by Thielen et al. 2020.
 
 
 Please note that metadata needed for Figures 1-4 and Fig S1 (`diagnostic_metadata.csv`, `sample_metadata.csv`, `samples_zip3_clade.csv`, `zip3_dx_counts.csv`) are not provided due to patient privacy restrictions. However, aggregate metadata is provided as `aggregate_sample_medata.xlsx` and sequencing metrics are provided in `sequencing_metrics.csv`.
