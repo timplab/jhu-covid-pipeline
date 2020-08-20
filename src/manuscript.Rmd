@@ -79,7 +79,6 @@ seq_metadata <- seq_metadata %>%
   mutate(diagnostic_ct_value=as.numeric(diagnostic_ct_value)) %>%
   mutate(days_from_onset=replace(days_from_onset,days_from_onset=="unknown",NA)) %>%
   mutate(days_from_onset=as.numeric(days_from_onset))
-
 ```
 
 ```{r tree-setup, echo=FALSE}
@@ -99,13 +98,13 @@ jhu_tips <- ss_tips[grep("-HP",ss_tips)]
 
 # prune tree to keep only desired tips
 jhu_tree <- drop.tip(ss_tree, setdiff(ss_tree$tip.label, jhu_tips))
-#write.tree(jhu_tree,"data/AllClades_cat_wHP_wother_wo3000_woMD_woDC_jhu_rooted.nwk")
+write.tree(jhu_tree,"data/nextstrain_ncov_local_tree_rooted_jhu.nwk")
 
 # figure out where the clades are
-#ggtree(ss_tree) %<+% ss_meta +
-#  aes(color=Clade) +
-#  scale_color_manual(values=c("#be1e2d","#fbb040","#8dc63f","#92278f","#00aeef"),na.value="grey80") +
-#  geom_point2(aes(color=Clade))
+ggtree(ss_tree) %<+% ss_meta +
+  aes(color=Clade) +
+  scale_color_manual(values=c("#be1e2d","#fbb040","#8dc63f","#92278f","#00aeef"),na.value="grey80") +
+  geom_point2(aes(color=Clade))
 
 ```
 
@@ -199,6 +198,16 @@ fig1c <- ggplot(dx_df, aes(x=bin, y=num)) +
 
 grid.arrange(fig1a,arrangeGrob(fig1b,fig1b_legend,fig1c,nrow=2,widths=c(5,2)),nrow=1,widths=c(6,3.5))
 
+```
+
+```{r, fig1-correlations, echo=FALSE, results='asis'}
+rho <- cor(dx_data$diagnostic_ct_value, dx_data$days_from_onset, method="spearman", use="complete.obs")
+cat('\nDiagnostic Ct value vs. Days from onset (Spearman correlation):\n')
+cat(paste0('\nrho = ', rho, '\n\n'))
+# ggscatter(dx_data, x = "days_from_onset", y = "diagnostic_ct_value",
+#           add = "reg.line", conf.int = TRUE,
+#           cor.coef = TRUE, cor.method = "spearman",
+#           xlab = "Days from onset", ylab = "Diagnostic Ct value")
 ```
 
 # Figure 2

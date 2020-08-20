@@ -109,8 +109,217 @@ mut_mat <- mut_mat[annots$name,]
 
 ```
 
-# Supplemental Figure 1. JHU-relevant SNPs.
-```{r, figS1, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=9}
+# Supplemental Figure 1. Geographic distribution of positive diagnoses
+```{r, map-dx, echo=FALSE, warning=FALSE}
+#-------------------------------------------------
+# load libraries
+library(maptools)
+library(rgdal)
+library(sf)
+library(lwgeom)
+library(mapplots)
+library(RColorBrewer)
+library(dplyr)
+
+#-------------------------------------------------
+# set up aesthetics
+water_col <- "lightblue"
+zip3_fill_col <- rev(RColorBrewer::brewer.pal(n = 4, name = "Greys"))[2:4]
+zip3_border_col <- "gray90"
+zip3_border_width <- 0.5
+state_border_col <- "gray90"
+state_border_width <- 0.1
+maryland_border_col <- "gray30"
+maryland_border_width <- 0.1
+county_border_col <- "gray90"
+county_border_width <- 0.1
+baltimore_border_col <- "gray90"
+baltimore_border_width <- 0.25
+water_line_width <- 1
+
+#-------------------------------------------------
+# set up viewbox
+asp <- 1
+center <- c(-77.25, 38.85)
+span <- c(3.8, 2.1)
+new_center <- c(0, 0)
+longlat_spacing <- 1
+countries <- c("United States")
+regions <- ""
+subregions <- ""
+states <- c("Maryland", "Delaware", "Virginia", "West Virginia", "Pennsylvania", "New Jersey")
+states_fips <- c(24, 10, 51, 54, 42, 34)
+xlim <- c(-span[1]/2+new_center[1], span[1]/2+new_center[1])*1e5
+ylim <- c(-span[2]/2+new_center[2], span[2]/2+new_center[2])*1e5
+
+rotate.sphere.old <- function(long, lat, a, axis=c(0,1,0)) {
+  
+  # rotates a long/lat pair 'a' degrees about an axis (defaults to y-axis)
+  # z-axis is north/south pole of earth
+  # x-axis comes out of the earth at (0, 0)
+  # y-axis comes out of the earth at (0, 90)
+  # returns the rotated longitude and latitude:
+  #   where the new 'north pole' is where the z-axis comes out of the rotated sphere
+  
+  # define constants
+  pi <- 3.14159265358979
+  
+  # convert lat, long, 'a' to radians
+  az <- long * pi/180
+  incl <- (90-lat) * pi/180
+  a <- a * pi/180
+  
+  # convert spherical coordinates to cartesian coordinates
+  x <- cos(az) * sin(incl)
+  y <- sin(az) * sin(incl)
+  z <- cos(incl)
+  
+  # rotate 'a' degrees about rotation axis
+  c1 <- axis[1]
+  c2 <- axis[2]
+  c3 <- axis[3]
+  x_p <- x*cos(a) + (1-cos(a))*(c1*c1*x + c1*c2*y + c1*c3*z) + (c2*z - c3*y)*sin(a)
+  y_p <- y*cos(a) + (1-cos(a))*(c2*c1*x + c2*c2*y + c2*c3*z) + (c3*x - c1*z)*sin(a)
+  z_p <- z*cos(a) + (1-cos(a))*(c3*c1*x + c3*c2*y + c3*c3*z) + (c1*y - c2*x)*sin(a)
+  
+  # convert back to spherical coordinates
+  az_p <- atan2(y_p, x_p)
+  incl_p <- acos(z_p)
+  
+  # convert azimuth/inclination to longitude/latitude
+  long_p <- az_p * 180/pi
+  lat_p <- 90 - incl_p * 180/pi
+  
+  return(c(long_p, lat_p))
+}
+
+
+# Figure 1D
+zip3_dx <- read.csv("data/zip3_dx_counts.csv")
+
+zip3.tr <- sf::st_read('data/shapefiles/zip3_mdhp.shp', quiet=TRUE)
+county.tr <- sf::st_read('data/shapefiles/county_mdhp.shp', quiet=TRUE)
+state.tr <- sf::st_read('data/shapefiles/state_mdhp.shp', quiet=TRUE)
+country.tr <- sf::st_read('data/shapefiles/country_mdhp.shp', quiet=TRUE)
+water.tr <- sf::st_read('data/shapefiles/water_mdhp.shp', quiet=TRUE)
+CRSstring <- paste("+proj=lcc +lat_1=33 +lat_2=45 +lat_0=", (center[2]-0.005), " +lon_0=", center[1], " +x_0=0 +y_0=0 +ellps=GRS80 +datum=WGS84 +units=m +no_defs", sep="")
+water.tr <- sf::st_transform(water.tr, CRS(CRSstring))
+
+#-------------------------------------------------
+# create object for fill for Chesapeake + Delaware Bays
+c_coord <- st_coordinates(country.tr)
+bay_water <- c_coord[4100:8377,]
+
+#-------------------------------------------------
+# set up zip data
+
+# link totals with zip3 shapefile
+count.mat <- function(zip) {
+  ret <- 0
+  zip_present <- zip3_dx$zip3 == zip
+  if(sum(zip_present) > 0) {
+    ret <- as.numeric(zip3_dx$count[zip_present])
+  }
+  return(ret)
+}
+count <- sapply(as.matrix(zip3.tr$ZCTA3CE), count.mat)
+
+# calculate color ramp from 0 to 1 for all places in 'place'
+ramp <- (1 - count/max(zip3_dx$count))
+ramp[ramp < 0] <- 0
+
+# convert ramp to rgb colors in hex string
+col_ramp <- colorRamp(zip3_fill_col)
+zip_col <- rgb(t(sapply(ramp, col_ramp)/255))
+zip_col[ramp==1] <- "#FFFFFF"
+
+#-------------------------------------------------
+# create empty plot
+plot(0,0, type='n', xlim=xlim, ylim=ylim, asp=asp, axes=F, xlab="", ylab="")
+# add water fill rectangle as base
+rect(-360*1e6, -180*1e6, 360*1e6, 180*1e6, col=water_col, border=NA)
+# plot zip3 fill first
+plot(zip3.tr, xlim=xlim, ylim=ylim, asp=asp,
+     col=zip_col, border=NA, add=TRUE)
+# overlay bay water
+polypath(bay_water,
+         col=water_col, border=FALSE)
+# add other lakes / water polygons
+plot(water.tr$geometry, xlim=xlim, ylim=ylim, asp=asp,
+     col=water_col, border=NA, add=TRUE)
+# add rivers / water lines
+# lines(waterlines.tr, xlim=xlim, ylim=ylim, asp=asp,
+#       col=water_col, lwd=water_line_width)
+# add county borders
+plot(county.tr$geometry[county.tr$NAME != "Baltimore",], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=county_border_col, lwd=county_border_width, add=TRUE)
+# add Baltimore city border
+plot(county.tr$geometry[county.tr$NAME == "Baltimore",], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=baltimore_border_col, lwd=baltimore_border_width, add=TRUE)
+# add zip3 borders
+plot(zip3.tr$geometry, xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=zip3_border_col, lwd=zip3_border_width,
+     add=TRUE)
+# add state borders
+plot(state.tr$geometry[state.tr$STATEFP != 24,], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=state_border_col, lwd=state_border_width, add=TRUE)
+# add Maryland border
+plot(state.tr$geometry[state.tr$STATEFP == 24,], xlim=xlim, ylim=ylim, asp=asp,
+     col=NA, border=maryland_border_col, lwd=maryland_border_width, add=TRUE)
+
+legend_ramp <- c(5, 50, 100, max(zip3_dx$count))/max(zip3_dx$count)
+zip3_fill_col <- rev(RColorBrewer::brewer.pal(n = 4, name = "Greys"))[2:4]
+col_ramp <- colorRamp(zip3_fill_col)
+legend_col <- rev(rgb(t(sapply(legend_ramp, col_ramp))/255))
+legend(x=-190000, y=5000, fill=legend_col, legend=c("1-5", 50, 100, max(zip3_dx$count)), border=NA, box.lty=0, bg="white", cex=1, title='Positive diagnoses')
+
+#-------------------------------------------------
+
+o <- order(names(which(count>0)))
+lat <- as.numeric(as.matrix(zip3.tr$INTPTLAT[count>0][o]))
+lon <- as.numeric(as.matrix(zip3.tr$INTPTLON[count>0][o])) - center[1]
+
+rotated <- matrix(rotate.sphere.old(lon, lat, center[2]), ncol=2)
+
+zip_sel <- zip3_dx$zip3 %in% zip3.tr$ZCTA3CE
+zip_labels <- zip3.tr$ZCTA3CE[count>0][o]
+
+plot_totals <- zip3_dx$count[zip_sel]
+cex <- rep(0.4, length(plot_totals))
+cex[plot_totals<=15] <- 0.3
+cex[plot_totals==5] <- 0.25
+offset <- rep(-0.1, length(plot_totals))
+offset[plot_totals<=15] <- -0.075
+offset[plot_totals==5] <- -0.05
+for(i in seq_along(plot_totals)) {
+  mapplots::add.pie(z=1,
+                    x=rotated[i,1]*1e5,
+                    y=rotated[i,2]*1e5,
+                    radius=0,
+                    border=NA,
+                    labels=zip_labels[i],
+                    label.dist=0,
+                    pos=1,
+                    offset=offset[i],
+                    cex=0.75
+  )
+  # mapplots::add.pie(z=1,
+  #                   x=(rotated[i,1]+0.125)*1e5,
+  #                   y=rotated[i,2]*1e5,
+  #                   radius=0,
+  #                   border=NA,
+  #                   labels=paste0("(n = ", zip3_dx$count[zip_sel][i], ")"),
+  #                   label.dist=0,
+  #                   pos=1,
+  #                   offset=offset[i]+0.025,
+  #                   cex=0.6
+  # )
+}
+
+```
+
+# Supplemental Figure 2. JHU-relevant SNPs.
+```{r, figS2, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=9}
 
 # order rows by nextstrain clade and jhhs clade
 row_order <- order(annots[,"nextstrain_clade"],annots[,"nextstrain_jhhs_clade"],
@@ -143,8 +352,8 @@ clade_heatmap
 ```
 Homoplasies visible at 11083, 13730, 27964
 
-# Supplemental Figure 2. Illumina versus Nanopore allele frequency comparison.
-```{r, figS2, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=3.5}
+# Supplemental Figure 3. Illumina versus Nanopore allele frequency comparison.
+```{r, figS3, echo=FALSE, warning=FALSE, fig.width=7.5, fig.height=3.5}
 
 postfilt_file <- "data/all_postfilt_variants.txt"
 postfilt_summary <- "data/all_postfilt_summaries.txt"
@@ -156,9 +365,9 @@ grid.arrange(plots[[1]],plots[[3]],ncol=2)
 
 ```
 
-# Supplemental Figure 3. Homopolymer and strand bias example.
+# Supplemental Figure 4. Homopolymer and strand bias example.
 
-# Supplemental Figure 4. Genetic distances matrix.
+# Supplemental Figure 5. Genetic distances matrix.
 
 \newpage
 # RMarkdown Environment
