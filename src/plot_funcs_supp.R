@@ -71,7 +71,7 @@ make_ont_ill_plots <- function(postfile_file, postfilt_summary, vars_file){
 	# summary column for confidence and called
 	af_data <- af_data %>% mutate(confidence=ifelse(called=="Uncalled","uncalled",
 		                                            ifelse(maybe_flags==TRUE,"low","high")))
-	af_data <- af_data %>% mutate(homopolymer=ifelse(pos==10712 | pos == 21575, "True", homopolymer))
+	af_data <- af_data %>% mutate(homopolymer=ifelse(pos==10712 | pos == 21575 | pos == 6312, "True", homopolymer))
 
 	# add a column for the absolute value of the difference in allele frequencies
 	af_data$freq_diff = af_data$ont_AF - af_data$illumina_AF
