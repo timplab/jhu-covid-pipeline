@@ -117,22 +117,24 @@ csse_dates <- as.Date(gsub("X", "", csse_date_columns), "%m.%d.%y")
 csse_plot_columns <- csse_date_columns[csse_dates %in% jhhs_agg$verification_date]
 #csse_plot_columns <- csse_date_columns[csse_dates %in% as.Date(names(date_count))]
 md_march <- apply(csse[csse$Province_State == "Maryland", csse_plot_columns], 2, sum)
-md_diff <- md_march - cumsum(jhhs_agg$positive_count)
+dc_march <- apply(csse[csse$Province_State == "District of Columbia", csse_plot_columns], 2, sum)
+region_march <- md_march+dc_march
+region_diff <- region_march - cumsum(jhhs_agg$positive_count)
 df_a <- data.frame(date=jhhs_agg$verification_date,
                    jhhs_cumulative=cumsum(jhhs_agg$positive_count),
-                   md_diff=md_diff)
+                   region_diff=region_diff)
 df_a_long <- melt(df_a, id.vars="date")
 
 df_a_long$variable <- factor(df_a_long$variable,
-                             levels=c("md_diff", "jhhs_cumulative"))
-levels(df_a_long$variable) <- c("Maryland Overall", "JHHS Overall")
+                             levels=c("region_diff", "jhhs_cumulative"))
+levels(df_a_long$variable) <- c("DC/Maryland Overall", "JHHS Overall")
 
 fig1a <- ggplot(df_a_long, aes(x=date, y=value, fill=variable, color=variable)) +
   geom_bar(stat='identity', width=0.75) +
   scale_fill_manual(values=c("white", "black")) +
   scale_color_manual(values=c("black", "black")) +
   #scale_x_date(limits=as.Date(c("2020-03-01", "2020-03-31"))) +
-  scale_y_continuous(limits=c(0,1750),breaks=seq(0,1750,250), expand = c(0,0)) +
+  scale_y_continuous(limits=c(0,2250),breaks=seq(0,2250,250), expand = c(0,0)) +
   labs(x="Test date", y="Number of positive tests") +
   ggtitle("") +
   theme_bw() +
@@ -144,7 +146,7 @@ fig1a <- ggplot(df_a_long, aes(x=date, y=value, fill=variable, color=variable)) 
         legend.title = element_blank(),
         legend.text = element_text(size=8),
         legend.position=c(0.2, 0.95)) +
-  geom_hline(yintercept=seq(0,1500,250), color="white") +
+  geom_hline(yintercept=seq(0,2250,250), color="white") +
   geom_vline(xintercept=as.Date(
     c("2020-03-05","2020-03-07","2020-03-11","2020-03-13","2020-03-23")),linetype="dashed")
 
